@@ -460,7 +460,7 @@
       color: var(--gray-400);
     }
     
-    /* Zone Detail Panel */
+    /* Zone Detail Panel - high z-index to appear above Leaflet map/popups */
     .detail-panel {
       position: absolute;
       top: 20px;
@@ -472,7 +472,8 @@
       border: 1px solid var(--gray-800);
       backdrop-filter: blur(10px);
       display: none;
-      z-index: 500;
+      z-index: 2000;
+      pointer-events: auto;
     }
     
     .detail-panel.active {
@@ -634,7 +635,7 @@
         <div class="detail-section">
           <div class="detail-section-title">Predicted Net Count</div>
           <div class="detail-value" id="detailNets">--</div>
-        </div>ƒ
+        </div>
         <div class="detail-section">
           <div class="detail-section-title">Recommended Action</div>
           <div class="detail-value" id="detailAction">--</div>

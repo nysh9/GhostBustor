@@ -63,17 +63,45 @@ async function loadInitialData() {
   showLoading(true);
   
   try {
-    // Load stats
-    const statsResponse = await fetch(`${API_URL}/stats`);
-    const stats = await statsResponse.json();
-    updateStats(stats);
+    // Load stats with timeout
+    const statsController = new AbortController();
+    const statsTimeout = setTimeout(() => statsController.abort(), 10000);
     
-    // Load sightings
-    const sightingsResponse = await fetch(`${API_URL}/sightings`);
-    sightings = await sightingsResponse.json();
-    displaySightings(sightings);
+    try {
+      const statsResponse = await fetch(`${API_URL}/stats`, {
+        signal: statsController.signal
+      });
+      clearTimeout(statsTimeout);
+      
+      if (statsResponse.ok) {
+        const stats = await statsResponse.json();
+        updateStats(stats);
+      }
+    } catch (e) {
+      clearTimeout(statsTimeout);
+      console.warn('Stats endpoint failed, using defaults');
+    }
     
-    // Run initial prediction
+    // Load sightings with timeout
+    const sightingsController = new AbortController();
+    const sightingsTimeout = setTimeout(() => sightingsController.abort(), 10000);
+    
+    try {
+      const sightingsResponse = await fetch(`${API_URL}/sightings`, {
+        signal: sightingsController.signal
+      });
+      clearTimeout(sightingsTimeout);
+      
+      if (sightingsResponse.ok) {
+        sightings = await sightingsResponse.json();
+        displaySightings(sightings);
+      }
+    } catch (e) {
+      clearTimeout(sightingsTimeout);
+      console.warn('Sightings endpoint failed, using defaults');
+    }
+    
+    // Run initial prediction (this might take longer)
     await runPrediction();
     
   } catch (error) {
@@ -162,7 +190,20 @@ async function runPrediction() {
   showLoading(true);
   
   try {
-    const response = await fetch(`${API_URL}/predict/region?min_lat=32&max_lat=40&min_lon=-125&max_lon=-117&days=7`);
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
+    const response = await fetch(`${API_URL}/predict/region?min_lat=32&max_lat=40&min_lon=-125&max_lon=-117&days=7`, {
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+    
     const data = await response.json();
     
     zones = data.zones || [];
@@ -174,6 +215,9 @@ async function runPrediction() {
     
   } catch (error) {
     console.error('Prediction error:', error);
+    if (error.name === 'AbortError') {
+      console.error('Request timed out after 30 seconds');
+    }
     // Use mock zones if API fails
     useMockZones();
   } finally {
@@ -345,6 +389,9 @@ function selectZone(zone) {
   // Pan map to zone
   map.panTo([zone.center.lat, zone.center.lon]);
   
+  // Close any open Leaflet popup so our detail panel is visible
+  map.closePopup();
+  
   // Show detail panel
   showDetailPanel(zone);
 }
@@ -352,6 +399,7 @@ function selectZone(zone) {
 // Show detail panel
 function showDetailPanel(zone) {
   const panel = document.getElementById('detailPanel');
+  if (!panel) return;
   
   document.getElementById('detailTitle').textContent = zone.id;
   document.getElementById('detailRisk').innerHTML = `
@@ -361,8 +409,9 @@ function showDetailPanel(zone) {
   `;
   document.getElementById('detailConfidence').textContent = `${zone.confidence_score}%`;
   document.getElementById('detailNets').textContent = `~${zone.predicted_net_count} ghost nets`;
-  document.getElementById('detailReason').textContent = zone.accumulation_reason;
-  document.getElementById('detailAction').textContent = zone.recommended_action;
+  const reasonEl = document.getElementById('detailReason');
+  if (reasonEl) reasonEl.textContent = zone.accumulation_reason || '';
+  document.getElementById('detailAction').textContent = zone.recommended_action || '--';
   
   panel.classList.add('active');
 }
